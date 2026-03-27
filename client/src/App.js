@@ -65,7 +65,8 @@ function nextFriday() {
 }
 
 // Returns the best session to auto-assign to, or null if none qualifies.
-// "Qualifies" = has a future date (including today) AND is not only tomorrow.
+// Picks the LATEST future session (furthest out) — the one actively being prepared.
+// If the only future session is tomorrow, treat as "no good session" and prompt.
 function findTargetSession(sessions) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -74,17 +75,16 @@ function findTargetSession(sessions) {
 
   const future = sessions
     .filter((s) => new Date(s.date + "T12:00:00") >= today)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+    .sort((a, b) => new Date(b.date) - new Date(a.date)); // latest first
 
   if (future.length === 0) return null;
 
-  const nearest = future[0];
+  // If the only/nearest future session is tomorrow, prompt for a new one
+  const nearest = [...future].sort((a, b) => new Date(a.date) - new Date(b.date))[0];
   const nearestDate = new Date(nearest.date + "T12:00:00");
+  if (nearestDate.getTime() === tomorrow.getTime() && future.length === 1) return null;
 
-  // If the nearest session is only tomorrow, treat as "no good session"
-  if (nearestDate.getTime() === tomorrow.getTime()) return null;
-
-  return nearest;
+  return future[0]; // latest future session
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -585,7 +585,11 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
       try { articleText = await fetchArticleText(article.url); } catch {}
       const updated = await api.getSummary(id, apiKey, articleText);
       if (updated.error) throw new Error(updated.error);
-      setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      // Merge only summary/tags — don't overwrite session_id or other fields
+      // that may have been updated concurrently (e.g. auto-assign on save).
+      setArticles((prev) => prev.map((a) =>
+        a.id === updated.id ? { ...a, summary: updated.summary, tags: updated.tags } : a
+      ));
       showToast("AI summary generated.");
     } catch (err) {
       showToast("Summary failed: " + err.message, true);
