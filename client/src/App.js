@@ -18,28 +18,21 @@ const api = {
   clearSummary: (id) => fetch(`/api/articles/${id}/summary`, { method: "DELETE" }).then((r) => r.json()),
 };
 
-// ── Browser-side article fetcher ──────────────────────────────────────────────
+// ── Browser-side article body fetcher (uses your logged-in cookies) ──────────
 async function fetchArticleText(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: "include" });
   const html = await res.text();
   const doc = new DOMParser().parseFromString(html, "text/html");
-
-  // Remove noise elements
   ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"].forEach(
     (tag) => doc.querySelectorAll(tag).forEach((el) => el.remove())
   );
-
-  // Prefer article/main content if available
   const content =
     doc.querySelector("article") ||
     doc.querySelector('[role="main"]') ||
     doc.querySelector("main") ||
     doc.body;
-
   return (content?.innerText || content?.textContent || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 12000);
+    .replace(/\s+/g, " ").trim().slice(0, 12000);
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -52,18 +45,45 @@ function useToast() {
   return { toast, show };
 }
 
+// ── Fetch headline + date from a URL ─────────────────────────────────────────
+async function fetchPageMeta(url) {
+  const res = await fetch(url);
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+
+  const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute("content");
+  const twitterTitle = doc.querySelector('meta[name="twitter:title"]')?.getAttribute("content");
+  const pageTitle = doc.querySelector("title")?.textContent;
+  const headline = (ogTitle || twitterTitle || pageTitle || "").trim();
+
+  // Try common date meta tags then fall back to today
+  const dateMeta =
+    doc.querySelector('meta[property="article:published_time"]')?.getAttribute("content") ||
+    doc.querySelector('meta[name="date"]')?.getAttribute("content") ||
+    doc.querySelector('meta[name="pubdate"]')?.getAttribute("content") ||
+    doc.querySelector('meta[itemprop="datePublished"]')?.getAttribute("content") ||
+    doc.querySelector('time[datetime]')?.getAttribute("datetime");
+
+  let article_date = new Date().toISOString().slice(0, 10); // default: today
+  if (dateMeta) {
+    const parsed = new Date(dateMeta);
+    if (!isNaN(parsed)) article_date = parsed.toISOString().slice(0, 10);
+  }
+
+  return { headline, article_date };
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function ArticleModal({ article, onClose, onSave }) {
   const [url, setUrl] = useState(article?.url || "");
-  const [headline, setHeadline] = useState(article?.headline || "");
   const [notes, setNotes] = useState(article?.notes || "");
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!url.trim() || !headline.trim()) return;
+    if (!url.trim()) return;
     setSaving(true);
-    await onSave({ url: url.trim(), headline: headline.trim(), notes: notes.trim() });
+    await onSave({ url: url.trim(), notes: notes.trim() });
     setSaving(false);
   };
 
@@ -87,10 +107,6 @@ function ArticleModal({ article, onClose, onSave }) {
               <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoFocus required />
             </div>
             <div className="field">
-              <label>Headline *</label>
-              <input type="text" value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Article headline..." required />
-            </div>
-            <div className="field">
               <label>Personal Notes</label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Your thoughts, why this matters for the broadcast..." />
             </div>
@@ -98,7 +114,7 @@ function ArticleModal({ article, onClose, onSave }) {
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? "Saving…" : "SAVE"}
+              {saving ? "Fetching & saving…" : "SAVE"}
             </button>
           </div>
         </form>
@@ -154,15 +170,20 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
         <span className="card-number">{String(index).padStart(2, "0")}</span>
         <div className="card-main">
           <div className="card-headline">{article.headline}</div>
-          <a
-            className="card-url"
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {article.url}
-          </a>
+          <div className="card-meta">
+            {article.article_date && (
+              <span className="card-date">{new Date(article.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            )}
+            <a
+              className="card-url"
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {article.url}
+            </a>
+          </div>
         </div>
         <div className="card-actions">
           <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(article); }}>EDIT</button>
@@ -194,7 +215,7 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
                   ))}
                 </div>
                 <div className="summary-actions">
-                  <button className="btn btn-ai btn-sm" onClick={() => onGetSummary(article.id, article.url)}>↺ REGENERATE</button>
+                  <button className="btn btn-ai btn-sm" onClick={() => onGetSummary(article.id)}>↺ REGENERATE</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => onClearSummary(article.id)}>CLEAR</button>
                 </div>
               </>
@@ -202,7 +223,7 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
               <>
                 <div className="summary-empty">No summary yet.</div>
                 <div className="summary-actions">
-                  <button className="btn btn-ai btn-sm" onClick={() => onGetSummary(article.id, article.url)}>
+                  <button className="btn btn-ai btn-sm" onClick={() => onGetSummary(article.id)}>
                     ✦ AI GET SUMMARY
                   </button>
                 </div>
@@ -250,10 +271,11 @@ export default function App() {
       setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       showToast("Article updated.");
     } else {
+      // Server fetches headline + date from the URL automatically
       const created = await api.createArticle(data);
       setArticles((prev) => [created, ...prev]);
       showToast("Article added — generating summary…");
-      handleGetSummary(created.id, data.url);
+      handleGetSummary(created.id);
     }
     setModalArticle(undefined);
   };
@@ -265,19 +287,19 @@ export default function App() {
     showToast("Article removed.");
   };
 
-  const handleGetSummary = async (id, url) => {
+  const handleGetSummary = async (id) => {
     if (!apiKey) { setShowApiKeyModal(true); return; }
+    const article = articles.find((a) => a.id === id);
     setLoadingId(id);
     try {
-      // Step 1: fetch article content in the browser
+      // Fetch article body in the browser — uses your logged-in cookies,
+      // so paywalled content is accessible just as it is in your browser tab.
       let articleText = "";
       try {
-        articleText = await fetchArticleText(url);
-      } catch (fetchErr) {
-        showToast("Could not fetch article page — summarising from headline only.", false);
+        articleText = await fetchArticleText(article.url);
+      } catch {
+        // CORS block or network error — server will summarise from headline
       }
-
-      // Step 2: send text to backend for Claude summarisation
       const updated = await api.getSummary(id, apiKey, articleText);
       if (updated.error) throw new Error(updated.error);
       setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));

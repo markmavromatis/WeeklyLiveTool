@@ -3,12 +3,14 @@ const cors = require("cors");
 const Anthropic = require("@anthropic-ai/sdk");
 const path = require("path");
 const fs = require("fs");
+const https = require("https");
+const http = require("http");
 
 const app = express();
 const PORT = 3001;
 
 // ── JSON file "database" ──────────────────────────────────────────────────────
-const DB_PATH = path.join(__dirname, "articles.json");
+const DB_PATH = path.join(__dirname, "../db/articles.json");
 
 function readDb() {
   if (!fs.existsSync(DB_PATH)) return { articles: [], nextId: 1 };
@@ -19,12 +21,140 @@ function writeDb(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-// Initialise file if missing
 if (!fs.existsSync(DB_PATH)) writeDb({ articles: [], nextId: 1 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({ origin: "http://localhost:3000" }));
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
+
+// ── Server-side URL fetcher ───────────────────────────────────────────────────
+function fetchUrl(url, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) return reject(new Error("Too many redirects"));
+    const parsed = new URL(url);
+    const lib = parsed.protocol === "https:" ? https : http;
+    const options = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
+      },
+      timeout: 15000,
+    };
+    const req = lib.get(options, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        const redirectUrl = res.headers.location.startsWith("http")
+          ? res.headers.location
+          : `${parsed.protocol}//${parsed.hostname}${res.headers.location}`;
+        return fetchUrl(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
+      }
+      let data = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { data += chunk; if (data.length > 800000) req.destroy(); });
+      res.on("end", () => resolve(data));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("Request timed out")); });
+  });
+}
+
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+    .replace(/&nbsp;/g, " ");
+}
+
+function extractFromHtml(html) {
+  // ── Headline ──
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{3,})["']/i)?.[1] ||
+                  html.match(/<meta[^>]+content=["']([^"']{3,})["'][^>]+property=["']og:title["']/i)?.[1];
+  const twitterTitle = html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']{3,})["']/i)?.[1] ||
+                       html.match(/<meta[^>]+content=["']([^"']{3,})["'][^>]+name=["']twitter:title["']/i)?.[1];
+  const titleTag = html.match(/<title[^>]*>([^<]{3,})<\/title>/i)?.[1];
+  const headline = decodeHtmlEntities((ogTitle || twitterTitle || titleTag || "").trim());
+
+  // ── Date ──
+  const dateMeta =
+    html.match(/<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/i)?.[1] ||
+    html.match(/<meta[^>]+name=["']pubdate["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/["']datePublished["']\s*:\s*["']([^"']+)["']/i)?.[1] ||
+    html.match(/datetime=["']([^"']+)["']/i)?.[1];
+
+  let article_date = new Date().toISOString().slice(0, 10);
+  if (dateMeta) {
+    const parsed = new Date(dateMeta);
+    if (!isNaN(parsed)) article_date = parsed.toISOString().slice(0, 10);
+  }
+
+  // ── Body text — try __NEXT_DATA__ JSON first (Next.js sites like The Verge) ──
+  let bodyText = "";
+
+  const nextDataMatch = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (nextDataMatch) {
+    try {
+      const nextData = JSON.parse(nextDataMatch[1]);
+      // Walk the props tree looking for article body content
+      const json = JSON.stringify(nextData);
+      // Extract all longish strings that look like article paragraphs
+      const paragraphs = [];
+      const matches = json.matchAll(/"(?:body|content|text|description)":\s*"([^"]{80,})"/g);
+      for (const m of matches) {
+        const cleaned = decodeHtmlEntities(m[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/<[^>]+>/g, " "));
+        if (cleaned.length > 80) paragraphs.push(cleaned);
+      }
+      if (paragraphs.length > 0) {
+        bodyText = paragraphs.join(" ").replace(/\s+/g, " ").trim().slice(0, 12000);
+      }
+    } catch (e) {
+      // fall through to HTML stripping
+    }
+  }
+
+  // ── Fallback: JSON-LD articleBody ──
+  if (!bodyText) {
+    const jsonLdMatch = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    if (jsonLdMatch) {
+      for (const block of jsonLdMatch) {
+        try {
+          const inner = block.replace(/<script[^>]*>|<\/script>/gi, "");
+          const ld = JSON.parse(inner);
+          const body = ld.articleBody || ld.description || (Array.isArray(ld["@graph"]) && ld["@graph"].find(n => n.articleBody)?.articleBody);
+          if (body && body.length > 100) {
+            bodyText = decodeHtmlEntities(body).replace(/\s+/g, " ").trim().slice(0, 12000);
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  // ── Final fallback: strip all HTML tags ──
+  if (!bodyText) {
+    bodyText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 12000);
+    bodyText = decodeHtmlEntities(bodyText);
+  }
+
+  return { headline, article_date, bodyText };
+}
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -34,18 +164,30 @@ app.get("/api/articles", (req, res) => {
   res.json([...articles].sort((a, b) => b.id - a.id));
 });
 
-// POST create article
-app.post("/api/articles", (req, res) => {
-  const { url, headline, notes } = req.body;
-  if (!url || !headline) {
-    return res.status(400).json({ error: "url and headline are required" });
+// POST create article — fetches headline + date server-side
+app.post("/api/articles", async (req, res) => {
+  const { url, notes } = req.body;
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  let headline = url;
+  let article_date = new Date().toISOString().slice(0, 10);
+
+  try {
+    const html = await fetchUrl(url);
+    const meta = extractFromHtml(html);
+    if (meta.headline) headline = meta.headline;
+    article_date = meta.article_date;
+  } catch (e) {
+    console.warn("Could not fetch URL for meta:", e.message);
   }
+
   const db = readDb();
   const article = {
     id: db.nextId++,
     url,
     headline,
     notes: notes || "",
+    article_date,
     summary: null,
     created_at: new Date().toISOString(),
   };
@@ -77,7 +219,7 @@ app.delete("/api/articles/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-// POST generate AI summary
+// POST generate AI summary — fetches article server-side, sends to Claude
 app.post("/api/articles/:id/summary", async (req, res) => {
   const id = parseInt(req.params.id);
   const db = readDb();
@@ -87,26 +229,30 @@ app.post("/api/articles/:id/summary", async (req, res) => {
   const apiKey = req.headers["x-api-key"];
   if (!apiKey) return res.status(400).json({ error: "Missing x-api-key header" });
 
-  // Article text is fetched browser-side and passed in the request body
-  const { articleText } = req.body;
+  // Article text is fetched browser-side (with your cookies, so paywalls work).
+  const bodyText = (req.body.articleText || "").trim();
 
   const client = new Anthropic({ apiKey });
 
-  const prompt = `You are a research assistant for a Japanese telecom company's Silicon Valley team that hosts a weekly US Tech & News livestream for a Japanese audience.
+  const prompt = `You are a research assistant for a Japanese telecom company's Silicon Valley team producing a weekly US Tech & News livestream.
 
-Summarise the following article content into exactly 4-5 bullet points. Base your summary solely on the text provided — do not comment on dates, knowledge cutoffs, or whether you recognise the article.
+Your job is to write a summary of the article below. You must always produce a summary — never refuse, never ask for clarification, never comment on dates or your training data.
 
-Article headline: "${article.headline}"
-${article.notes ? `Reporter's notes: ${article.notes}\n` : ""}
-${articleText ? `Article content:\n${articleText}` : "The full article text was not available. Summarise based on the headline alone."}
+Headline: "${article.headline}"
+${article.notes ? `Reporter notes: ${article.notes}\n` : ""}
+Article text:
+${bodyText || "(Article text unavailable — summarise from the headline only, making reasonable inferences about likely content.)"}
 
-Each bullet must be a single clear sentence. Cover:
+Write exactly 4-5 bullet points. Each bullet is one clear sentence. Cover:
 - The core news or development
-- Why it matters for US tech
-- Relevance to telecom, AI, or enterprise technology (if applicable)
-- Key names, companies, or numbers involved
+- Why it matters for the US tech industry
+- Any relevance to telecom, AI, or enterprise technology
+- Key names, companies, or figures involved
 
-Format: start each bullet with "- " and nothing else. No intro, no outro, no caveats.`;
+Rules:
+- Start every bullet with "- "
+- No introduction, no conclusion, no caveats, no commentary about the source or your limitations
+- If article text is missing, still write 4-5 confident bullets based on the headline`;
 
   try {
     const message = await client.messages.create({

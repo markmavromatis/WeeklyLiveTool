@@ -272,6 +272,22 @@ input[type="search"]:focus { border-color: var(--ink); }
   word-break: break-word;
 }
 
+.card-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.card-date {
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
 .card-url {
   font-size: 10px;
   color: var(--ink-faint);
@@ -489,6 +505,19 @@ textarea { min-height: 80px; }
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.fetching-label {
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  margin-left: 6px;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .api-key-hint {
