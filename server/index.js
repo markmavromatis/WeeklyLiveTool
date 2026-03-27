@@ -13,15 +13,19 @@ const PORT = 3001;
 const DB_PATH = path.join(__dirname, "../db/articles.json");
 
 function readDb() {
-  if (!fs.existsSync(DB_PATH)) return { articles: [], nextId: 1 };
-  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  if (!fs.existsSync(DB_PATH)) return { articles: [], sessions: [], nextId: 1, nextSessionId: 1 };
+  const data = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  // Migrate older files that lack sessions
+  if (!data.sessions) data.sessions = [];
+  if (!data.nextSessionId) data.nextSessionId = 1;
+  return data;
 }
 
 function writeDb(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-if (!fs.existsSync(DB_PATH)) writeDb({ articles: [], nextId: 1 });
+if (!fs.existsSync(DB_PATH)) writeDb({ articles: [], sessions: [], nextId: 1, nextSessionId: 1 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({ origin: "http://localhost:3000" }));
@@ -289,6 +293,78 @@ app.delete("/api/articles/:id/summary", (req, res) => {
   const article = db.articles.find((a) => a.id === id);
   if (!article) return res.status(404).json({ error: "Not found" });
   article.summary = null;
+  writeDb(db);
+  res.json(article);
+});
+
+// ── Session routes ───────────────────────────────────────────────────────────
+
+// GET all sessions
+app.get("/api/sessions", (req, res) => {
+  const db = readDb();
+  res.json([...db.sessions].sort((a, b) => b.index - a.index));
+});
+
+// POST create session
+app.post("/api/sessions", (req, res) => {
+  const { date, index, participants } = req.body;
+  if (!date || index === undefined) return res.status(400).json({ error: "date and index are required" });
+  const db = readDb();
+  const session = {
+    id: db.nextSessionId++,
+    date,
+    index: parseInt(index),
+    participants: participants || [],
+    created_at: new Date().toISOString(),
+  };
+  db.sessions.push(session);
+  writeDb(db);
+  res.status(201).json(session);
+});
+
+// PUT update session
+app.put("/api/sessions/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+  const { date, index, participants } = req.body;
+  const db = readDb();
+  const session = db.sessions.find((s) => s.id === id);
+  if (!session) return res.status(404).json({ error: "Not found" });
+  session.date = date;
+  session.index = parseInt(index);
+  session.participants = participants || [];
+  writeDb(db);
+  res.json(session);
+});
+
+// DELETE session (unlinks articles but does not delete them)
+app.delete("/api/sessions/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+  const db = readDb();
+  db.sessions = db.sessions.filter((s) => s.id !== id);
+  db.articles.forEach((a) => { if (a.session_id === id) a.session_id = null; });
+  writeDb(db);
+  res.json({ ok: true });
+});
+
+// PUT assign article to session
+app.put("/api/sessions/:sessionId/articles/:articleId", (req, res) => {
+  const sessionId = parseInt(req.params.sessionId);
+  const articleId = parseInt(req.params.articleId);
+  const db = readDb();
+  const article = db.articles.find((a) => a.id === articleId);
+  if (!article) return res.status(404).json({ error: "Article not found" });
+  article.session_id = sessionId;
+  writeDb(db);
+  res.json(article);
+});
+
+// DELETE unassign article from session
+app.delete("/api/sessions/:sessionId/articles/:articleId", (req, res) => {
+  const articleId = parseInt(req.params.articleId);
+  const db = readDb();
+  const article = db.articles.find((a) => a.id === articleId);
+  if (!article) return res.status(404).json({ error: "Article not found" });
+  article.session_id = null;
   writeDb(db);
   res.json(article);
 });
