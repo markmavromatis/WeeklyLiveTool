@@ -192,6 +192,7 @@ app.post("/api/articles", async (req, res) => {
     headline,
     notes: notes || "",
     article_date,
+    tags: [],
     summary: null,
     created_at: new Date().toISOString(),
   };
@@ -210,6 +211,18 @@ app.put("/api/articles/:id", (req, res) => {
   article.url = url;
   article.headline = headline;
   article.notes = notes || "";
+  writeDb(db);
+  res.json(article);
+});
+
+// PUT update article tags
+app.put("/api/articles/:id/tags", (req, res) => {
+  const id = parseInt(req.params.id);
+  const { tags } = req.body;
+  const db = readDb();
+  const article = db.articles.find((a) => a.id === id);
+  if (!article) return res.status(404).json({ error: "Not found" });
+  article.tags = Array.isArray(tags) ? tags : [];
   writeDb(db);
   res.json(article);
 });
@@ -238,25 +251,40 @@ app.post("/api/articles/:id/summary", async (req, res) => {
 
   const client = new Anthropic({ apiKey });
 
+  const PRESET_TAGS = ["AdTech","AI","Enterprise","Mobility","Robotics","Semiconductors","Streaming","Social Media","Sustainability"];
+
   const prompt = `You are a research assistant for a Japanese telecom company's Silicon Valley team producing a weekly US Tech & News livestream.
 
-Your job is to write a summary of the article below. You must always produce a summary — never refuse, never ask for clarification, never comment on dates or your training data.
+Your job is to write a summary AND assign tags to the article below. You must always produce output — never refuse, never ask for clarification, never comment on dates or your training data.
 
 Headline: "${article.headline}"
 ${article.notes ? `Reporter notes: ${article.notes}\n` : ""}
 Article text:
-${bodyText || "(Article text unavailable — summarise from the headline only, making reasonable inferences about likely content.)"}
+${bodyText || "(Article text unavailable — work from the headline only, making reasonable inferences about likely content.)"}
 
-Write exactly 4-5 bullet points. Each bullet is one clear sentence. Cover:
+Produce your response in exactly this format and nothing else:
+
+BULLETS:
+- <bullet 1>
+- <bullet 2>
+- <bullet 3>
+- <bullet 4>
+- <bullet 5 (optional)>
+
+TAGS: <comma-separated tags>
+
+Rules for BULLETS (4-5 total, each one clear sentence):
 - The core news or development
 - Why it matters for the US tech industry
 - Any relevance to telecom, AI, or enterprise technology
 - Key names, companies, or figures involved
-
-Rules:
 - Start every bullet with "- "
-- No introduction, no conclusion, no caveats, no commentary about the source or your limitations
-- If article text is missing, still write 4-5 confident bullets based on the headline`;
+
+Rules for TAGS:
+- Choose 1-3 tags that best describe the article content
+- Prefer from this preset list where relevant: ${PRESET_TAGS.join(", ")}
+- You may add a custom tag if none of the presets fit, but keep it short (1-2 words, title case)
+- Output only the tag names separated by commas, no extra text`;
 
   try {
     const message = await client.messages.create({
@@ -271,13 +299,23 @@ Rules:
       .join("\n")
       .trim();
 
-    const bullets = text
+    // Parse BULLETS section
+    const bulletsMatch = text.match(/BULLETS:\s*([\s\S]*?)(?=\nTAGS:|$)/i);
+    const bulletsBlock = bulletsMatch ? bulletsMatch[1] : text;
+    const bullets = bulletsBlock
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l.startsWith("- "))
       .map((l) => l.slice(2).trim());
 
+    // Parse TAGS section
+    const tagsMatch = text.match(/TAGS:\s*(.+)/i);
+    const tags = tagsMatch
+      ? tagsMatch[1].split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
+
     article.summary = JSON.stringify(bullets.length ? bullets : [text]);
+    article.tags = tags;
     writeDb(db);
     res.json(article);
   } catch (err) {

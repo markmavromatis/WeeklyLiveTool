@@ -141,4 +141,6 @@ vite.config.ts.timestamp-*
 
 .DS_Store
 package-lock.json
+client/package-lock.json
+db/
 

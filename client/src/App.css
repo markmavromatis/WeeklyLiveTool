@@ -813,3 +813,138 @@ textarea { min-height: 80px; }
 }
 
 .session-select:focus { border-color: var(--ink); background-color: white; }
+
+/* ── TAGS ── */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid #f0c0bd;
+  border-radius: 2px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tag-pill button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #d4766e;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.1s;
+}
+
+.tag-pill button:hover { color: var(--accent); }
+
+.tag-pill-sm {
+  font-size: 9px;
+  padding: 1px 5px;
+  pointer-events: none;
+}
+
+/* tag editor */
+.tag-editor { width: 100%; }
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-input-wrap {
+  position: relative;
+}
+
+.tag-input {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: 2px;
+  padding: 2px 8px;
+  width: 90px;
+  outline: none;
+  transition: border-color 0.15s, width 0.15s;
+}
+
+.tag-input:focus {
+  border-color: var(--accent);
+  border-style: solid;
+  width: 130px;
+}
+
+.tag-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-hover);
+  z-index: 50;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.tag-option {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 7px 12px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: background 0.1s;
+}
+
+.tag-option:hover { background: var(--accent-light); color: var(--accent); }
+
+.tag-option-custom {
+  color: var(--ink-muted);
+  border-top: 1px solid var(--border);
+  font-style: italic;
+}
+
+/* tag filter bar */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 40px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.tag-filter-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  margin-right: 4px;
+}
+
+.tag-filter-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.tag-filter-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.tag-filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }

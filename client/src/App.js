@@ -29,7 +29,11 @@ const api = {
     fetch(`/api/sessions/${sessionId}/articles/${articleId}`, { method: "PUT" }).then((r) => r.json()),
   unassignArticle: (sessionId, articleId) =>
     fetch(`/api/sessions/${sessionId}/articles/${articleId}`, { method: "DELETE" }).then((r) => r.json()),
+  updateTags: (id, tags) =>
+    fetch(`/api/articles/${id}/tags`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tags }) }).then((r) => r.json()),
 };
+
+const PRESET_TAGS = ["AdTech","AI","Enterprise","Mobility","Robotics","Semiconductors","Streaming","Social Media","Sustainability"];
 
 // ── Browser-side article body fetcher (uses your logged-in cookies) ──────────
 async function fetchArticleText(url) {
@@ -282,12 +286,71 @@ function ApiKeyModal({ onClose, onSave }) {
   );
 }
 
+// ── Tag Editor ───────────────────────────────────────────────────────────────
+function TagEditor({ tags = [], onChange }) {
+  const [input, setInput] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const add = (tag) => {
+    const t = tag.trim();
+    if (t && !tags.includes(t)) onChange([...tags, t]);
+    setInput("");
+    setOpen(false);
+  };
+
+  const remove = (tag) => onChange(tags.filter((t) => t !== tag));
+
+  const suggestions = PRESET_TAGS.filter(
+    (t) => !tags.includes(t) && t.toLowerCase().includes(input.toLowerCase())
+  );
+
+  return (
+    <div className="tag-editor">
+      <div className="tag-list">
+        {tags.map((t) => (
+          <span key={t} className="tag-pill">
+            {t}
+            <button onClick={() => remove(t)}>×</button>
+          </span>
+        ))}
+        <div className="tag-input-wrap">
+          <input
+            className="tag-input"
+            value={input}
+            placeholder="+ tag"
+            onChange={(e) => { setInput(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && input.trim()) { e.preventDefault(); add(input); }
+              if (e.key === "Escape") { setInput(""); setOpen(false); }
+            }}
+          />
+          {open && (suggestions.length > 0 || input.trim()) && (
+            <div className="tag-dropdown">
+              {suggestions.map((t) => (
+                <div key={t} className="tag-option" onMouseDown={() => add(t)}>{t}</div>
+              ))}
+              {input.trim() && !PRESET_TAGS.includes(input.trim()) && (
+                <div className="tag-option tag-option-custom" onMouseDown={() => add(input)}>
+                  Add "{input.trim()}"
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Article Card ──────────────────────────────────────────────────────────────
-function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSummary, loadingId, sessionBadge, sessions, onAssign, onUnassign }) {
+function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSummary, loadingId, sessionBadge, sessions, onAssign, onUnassign, onTagsChange }) {
   const isLoading = loadingId === article.id;
   const [open, setOpen] = useState(isLoading);
   useEffect(() => { if (isLoading) setOpen(true); }, [isLoading]);
   const summary = article.summary ? JSON.parse(article.summary) : null;
+  const tags = article.tags || [];
 
   const handleSessionChange = (e) => {
     const val = e.target.value;
@@ -306,6 +369,7 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
               <span className="card-date">{new Date(article.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
             )}
             {sessionBadge && <span className="session-badge">#{sessionBadge}</span>}
+            {tags.map((t) => <span key={t} className="tag-pill tag-pill-sm">{t}</span>)}
             <a className="card-url" href={article.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>{article.url}</a>
           </div>
         </div>
@@ -317,6 +381,10 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
       </div>
       {open && (
         <div className="card-body">
+          <div className="card-section">
+            <div className="section-label">Tags</div>
+            <TagEditor tags={tags} onChange={(newTags) => onTagsChange(article.id, newTags)} />
+          </div>
           <div className="card-section">
             <div className="section-label">Live Session</div>
             <select className="session-select" value={article.session_id || ""} onChange={handleSessionChange}>
@@ -443,11 +511,15 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
 // ── Articles Screen ───────────────────────────────────────────────────────────
 function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, setShowApiKeyModal, showToast }) {
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState(null);
   const [modalArticle, setModalArticle] = useState(undefined);
   const [loadingId, setLoadingId] = useState(null);
   const [sessionPrompt, setSessionPrompt] = useState(null); // { articleId, fridayDate }
 
   const sessionMap = Object.fromEntries(sessions.map((s) => [s.id, s.index]));
+
+  // All tags across all articles, deduplicated and sorted
+  const allTags = [...new Set(articles.flatMap((a) => a.tags || []))].sort();
 
   useEffect(() => {
     const h = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setModalArticle(null); } };
@@ -540,9 +612,16 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
     setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
   };
 
-  const filtered = articles.filter((a) =>
-    !search || [a.headline, a.url, a.notes].some((s) => s?.toLowerCase().includes(search.toLowerCase()))
-  );
+  const handleTagsChange = async (articleId, tags) => {
+    const updated = await api.updateTags(articleId, tags);
+    setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  };
+
+  const filtered = articles.filter((a) => {
+    const matchSearch = !search || [a.headline, a.url, a.notes].some((s) => s?.toLowerCase().includes(search.toLowerCase()));
+    const matchTag = !tagFilter || (a.tags || []).includes(tagFilter);
+    return matchSearch && matchTag;
+  });
 
   return (
     <>
@@ -559,6 +638,15 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
           ADD ARTICLE
         </button>
       </div>
+      {allTags.length > 0 && (
+        <div className="tag-filter-bar">
+          <span className="tag-filter-label">FILTER</span>
+          <button className={`tag-filter-btn ${!tagFilter ? "active" : ""}`} onClick={() => setTagFilter(null)}>All</button>
+          {allTags.map((t) => (
+            <button key={t} className={`tag-filter-btn ${tagFilter === t ? "active" : ""}`} onClick={() => setTagFilter(tagFilter === t ? null : t)}>{t}</button>
+          ))}
+        </div>
+      )}
 
       <main className="articles-container">
         {filtered.length === 0 ? (
@@ -583,6 +671,7 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
                 sessions={sessions}
                 onAssign={handleAssign}
                 onUnassign={handleUnassign}
+                onTagsChange={handleTagsChange}
               />
             ))}
           </>
