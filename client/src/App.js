@@ -48,6 +48,41 @@ async function fetchArticleText(url) {
     .replace(/\s+/g, " ").trim().slice(0, 12000);
 }
 
+// ── Session auto-assign helpers ──────────────────────────────────────────────
+function nextFriday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun … 5=Fri … 6=Sat
+  const daysUntilFriday = day <= 5 ? 5 - day : 6; // if today is Fri, next Fri = 7 days
+  // If today is Friday, schedule for next Friday (7 days out)
+  const add = day === 5 ? 7 : daysUntilFriday;
+  d.setDate(d.getDate() + add);
+  return d.toISOString().slice(0, 10);
+}
+
+// Returns the best session to auto-assign to, or null if none qualifies.
+// "Qualifies" = has a future date (including today) AND is not only tomorrow.
+function findTargetSession(sessions) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const future = sessions
+    .filter((s) => new Date(s.date + "T12:00:00") >= today)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  if (future.length === 0) return null;
+
+  const nearest = future[0];
+  const nearestDate = new Date(nearest.date + "T12:00:00");
+
+  // If the nearest session is only tomorrow, treat as "no good session"
+  if (nearestDate.getTime() === tomorrow.getTime()) return null;
+
+  return nearest;
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function useToast() {
   const [toast, setToast] = useState(null);
@@ -56,6 +91,32 @@ function useToast() {
     setTimeout(() => setToast(null), isError ? 7000 : 3000);
   }, []);
   return { toast, show };
+}
+
+// ── Session Prompt Modal ─────────────────────────────────────────────────────
+function SessionPromptModal({ fridayDate, onYes, onNo }) {
+  const fmt = new Date(fridayDate + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric"
+  });
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
+          <span className="modal-title">No Upcoming Session</span>
+        </div>
+        <div className="modal-body">
+          <p className="api-key-hint">
+            There is no upcoming weekly live session to assign this article to.
+            Would you like to create one for <strong>{fmt}</strong>?
+          </p>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onNo}>No, skip</button>
+          <button className="btn btn-primary" onClick={onYes}>Yes, create session</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Article Modal ─────────────────────────────────────────────────────────────
@@ -380,10 +441,11 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
 }
 
 // ── Articles Screen ───────────────────────────────────────────────────────────
-function ArticlesScreen({ articles, sessions, setArticles, apiKey, setShowApiKeyModal, showToast }) {
+function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, setShowApiKeyModal, showToast }) {
   const [search, setSearch] = useState("");
   const [modalArticle, setModalArticle] = useState(undefined);
   const [loadingId, setLoadingId] = useState(null);
+  const [sessionPrompt, setSessionPrompt] = useState(null); // { articleId, fridayDate }
 
   const sessionMap = Object.fromEntries(sessions.map((s) => [s.id, s.index]));
 
@@ -398,14 +460,42 @@ function ArticlesScreen({ articles, sessions, setArticles, apiKey, setShowApiKey
       const updated = await api.updateArticle(modalArticle.id, data);
       setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       showToast("Article updated.");
-    } else {
-      const created = await api.createArticle(data);
-      setArticles((prev) => [created, ...prev]);
-      showToast("Article added — generating summary…");
-      handleGetSummary(created.id);
+      setModalArticle(undefined);
+      return;
     }
+
+    const created = await api.createArticle(data);
+    setArticles((prev) => [created, ...prev]);
     setModalArticle(undefined);
+    showToast("Article added — generating summary…");
+    handleGetSummary(created.id);
+
+    // Auto-assign to an upcoming session, or prompt to create one
+    const target = findTargetSession(sessions);
+    if (target) {
+      const updated = await api.assignArticle(target.id, created.id);
+      setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    } else {
+      setSessionPrompt({ articleId: created.id, fridayDate: nextFriday() });
+    }
   };
+
+  const handleSessionPromptYes = async () => {
+    if (!sessionPrompt) return;
+    const { articleId, fridayDate } = sessionPrompt;
+    setSessionPrompt(null);
+
+    // Work out the next session index
+    const maxIndex = sessions.reduce((m, s) => Math.max(m, s.index), 0);
+    const newSession = await api.createSession({ date: fridayDate, index: maxIndex + 1, participants: [] });
+    setSessions((prev) => [newSession, ...prev]);
+
+    const updated = await api.assignArticle(newSession.id, articleId);
+    setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    showToast(`Session #${newSession.index} created and article linked.`);
+  };
+
+  const handleSessionPromptNo = () => setSessionPrompt(null);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Remove this article?")) return;
@@ -501,6 +591,13 @@ function ArticlesScreen({ articles, sessions, setArticles, apiKey, setShowApiKey
 
       {modalArticle !== undefined && (
         <ArticleModal article={modalArticle} onClose={() => setModalArticle(undefined)} onSave={handleSave} />
+      )}
+      {sessionPrompt && (
+        <SessionPromptModal
+          fridayDate={sessionPrompt.fridayDate}
+          onYes={handleSessionPromptYes}
+          onNo={handleSessionPromptNo}
+        />
       )}
     </>
   );
@@ -633,6 +730,7 @@ export default function App() {
         <ArticlesScreen
           articles={articles}
           sessions={sessions}
+          setSessions={setSessions}
           setArticles={setArticles}
           apiKey={apiKey}
           setShowApiKeyModal={setShowApiKeyModal}
