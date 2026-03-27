@@ -141,8 +141,11 @@ function ApiKeyModal({ onClose, onSave }) {
 
 // ── Article Card ──────────────────────────────────────────────────────────────
 function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSummary, loadingId }) {
-  const [open, setOpen] = useState(false);
   const isLoading = loadingId === article.id;
+  const [open, setOpen] = useState(isLoading);
+
+  // Auto-expand when this card starts loading
+  useEffect(() => { if (isLoading) setOpen(true); }, [isLoading]);
   const summary = article.summary ? JSON.parse(article.summary) : null;
 
   return (
@@ -249,7 +252,8 @@ export default function App() {
     } else {
       const created = await api.createArticle(data);
       setArticles((prev) => [created, ...prev]);
-      showToast("Article added.");
+      showToast("Article added — generating summary…");
+      handleGetSummary(created.id, data.url);
     }
     setModalArticle(undefined);
   };
