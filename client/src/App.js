@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import { useState, useEffect, useCallback } from "react";
 import "./App.css";
 
@@ -430,6 +431,43 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
   );
 }
 
+// ── Export Long List ──────────────────────────────────────────────────────────
+function exportLongList(session, articles) {
+  // Filter & sort: by article_date asc, then headline asc
+  const rows = articles
+    .filter((a) => a.session_id === session.id)
+    .sort((a, b) => {
+      const dateCmp = (a.article_date || "").localeCompare(b.article_date || "");
+      return dateCmp !== 0 ? dateCmp : a.headline.localeCompare(b.headline);
+    })
+    .map((a) => ({
+      Date: a.article_date
+        ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", {
+            month: "short", day: "numeric", year: "numeric",
+          })
+        : "",
+      Headline: a.headline,
+      URL: a.url,
+    }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  // Column widths: Date=14, Headline=60, URL=60
+  ws["!cols"] = [{ wch: 14 }, { wch: 60 }, { wch: 60 }];
+
+  // Style header row bold (xlsx community edition supports limited styling via cell meta)
+  ["A1", "B1", "C1"].forEach((ref) => {
+    if (ws[ref]) ws[ref].s = { font: { bold: true }, alignment: { horizontal: "center" } };
+  });
+
+  const wb = XLSX.utils.book_new();
+  const sheetName = `Session ${session.index}`;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  const dateStr = session.date.replace(/-/g, "");
+  XLSX.writeFile(wb, `long-list-session${session.index}-${dateStr}.xlsx`);
+}
+
 // ── Session Card ──────────────────────────────────────────────────────────────
 function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssign, onUnassign }) {
   const [open, setOpen] = useState(false);
@@ -477,6 +515,17 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
               <button className="btn btn-danger btn-sm" onClick={() => onUnassign(session.id, a.id)}>UNLINK</button>
             </div>
           ))}
+
+          <div className="session-footer-actions">
+            <button
+              className="btn btn-ghost btn-sm export-btn"
+              onClick={() => exportLongList(session, articles)}
+              title="Download all session articles as Excel"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              EXPORT LONG LIST
+            </button>
+          </div>
 
           <div className="session-add-article">
             {showPicker ? (

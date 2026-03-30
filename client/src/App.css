@@ -948,3 +948,25 @@ textarea { min-height: 80px; }
 
 .tag-filter-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
 .tag-filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* ── Session footer actions (Export Long List) ── */
+.session-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.export-btn {
+  color: var(--ink-muted) !important;
+  border-color: var(--border-strong) !important;
+  gap: 6px;
+}
+
+.export-btn:hover {
+  background: #e8f4ee !important;
+  color: #2d6a4f !important;
+  border-color: #74c69d !important;
+}

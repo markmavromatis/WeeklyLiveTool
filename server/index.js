@@ -25,6 +25,7 @@ function writeDb(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 if (!fs.existsSync(DB_PATH)) writeDb({ articles: [], sessions: [], nextId: 1, nextSessionId: 1 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
