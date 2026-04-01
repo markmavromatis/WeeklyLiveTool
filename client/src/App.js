@@ -32,6 +32,12 @@ const api = {
     fetch(`/api/sessions/${sessionId}/articles/${articleId}`, { method: "DELETE" }).then((r) => r.json()),
   updateTags: (id, tags) =>
     fetch(`/api/articles/${id}/tags`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tags }) }).then((r) => r.json()),
+  translateHeadlines: (headlines, apiKey) =>
+    fetch("/api/translate-headlines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify({ headlines }),
+    }).then((r) => r.json()),
 };
 
 const PRESET_TAGS = ["AdTech","AI","Enterprise","Mobility","Robotics","Semiconductors","Streaming","Social Media","Sustainability"];
@@ -432,31 +438,42 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
 }
 
 // ── Export Long List ──────────────────────────────────────────────────────────
-function exportLongList(session, articles) {
+async function exportLongList(session, articles, apiKey = "") {
   // Filter & sort: by article_date asc, then headline asc
-  const rows = articles
+  const sessionArticles = articles
     .filter((a) => a.session_id === session.id)
     .sort((a, b) => {
       const dateCmp = (a.article_date || "").localeCompare(b.article_date || "");
       return dateCmp !== 0 ? dateCmp : a.headline.localeCompare(b.headline);
-    })
-    .map((a) => ({
-      Date: a.article_date
-        ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", {
-            month: "short", day: "numeric", year: "numeric",
-          })
-        : "",
-      Headline: a.headline,
-      URL: a.url,
-    }));
+    });
+
+  let headlineMap = {};
+  if (sessionArticles.length > 0) {
+    const translations = await api.translateHeadlines(
+      sessionArticles.map((a) => ({ id: a.id, headline: a.headline })),
+      apiKey
+    );
+    headlineMap = translations;
+  }
+
+  const rows = sessionArticles.map((a) => ({
+    Date: a.article_date
+      ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", {
+          month: "short", day: "numeric", year: "numeric",
+        })
+      : "",
+    Headline: a.headline,
+    URL: a.url,
+    "Japanese Headline": headlineMap[a.id] || "",
+  }));
 
   const ws = XLSX.utils.json_to_sheet(rows);
 
-  // Column widths: Date=14, Headline=60, URL=60
-  ws["!cols"] = [{ wch: 14 }, { wch: 60 }, { wch: 60 }];
+  // Column widths: Date=14, Headline=60, URL=60, Japanese Headline=60
+  ws["!cols"] = [{ wch: 14 }, { wch: 60 }, { wch: 60 }, { wch: 60 }];
 
-  // Style header row bold (xlsx community edition supports limited styling via cell meta)
-  ["A1", "B1", "C1"].forEach((ref) => {
+  // Style header row bold
+  ["A1", "B1", "C1", "D1"].forEach((ref) => {
     if (ws[ref]) ws[ref].s = { font: { bold: true }, alignment: { horizontal: "center" } };
   });
 
@@ -469,9 +486,22 @@ function exportLongList(session, articles) {
 }
 
 // ── Session Card ──────────────────────────────────────────────────────────────
-function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssign, onUnassign }) {
+function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssign, onUnassign, apiKey, setShowApiKeyModal, showToast }) {
   const [open, setOpen] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!apiKey) { setShowApiKeyModal(true); return; }
+    setExporting(true);
+    try {
+      await exportLongList(session, articles, apiKey);
+    } catch (e) {
+      showToast("Export failed: " + e.message, true);
+    } finally {
+      setExporting(false);
+    }
+  };
   const sessionArticles = articles.filter((a) => a.session_id === session.id);
   const unassigned = allArticles.filter((a) => !a.session_id);
 
@@ -519,11 +549,12 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
           <div className="session-footer-actions">
             <button
               className="btn btn-ghost btn-sm export-btn"
-              onClick={() => exportLongList(session, articles)}
-              title="Download all session articles as Excel"
+              disabled={exporting}
+              onClick={handleExport}
+              title="Download all session articles as Excel (with Japanese translations)"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              EXPORT LONG LIST
+              {exporting ? "TRANSLATING…" : "EXPORT LONG LIST"}
             </button>
           </div>
 
@@ -746,7 +777,7 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
 }
 
 // ── Sessions Screen ───────────────────────────────────────────────────────────
-function SessionsScreen({ sessions, setSessions, articles, setArticles, showToast }) {
+function SessionsScreen({ sessions, setSessions, articles, setArticles, showToast, apiKey, setShowApiKeyModal }) {
   const [modalSession, setModalSession] = useState(undefined);
 
   const handleSave = async (data) => {
@@ -813,6 +844,9 @@ function SessionsScreen({ sessions, setSessions, articles, setArticles, showToas
                 onDelete={handleDelete}
                 onAssign={handleAssign}
                 onUnassign={handleUnassign}
+                apiKey={apiKey}
+                setShowApiKeyModal={setShowApiKeyModal}
+                showToast={showToast}
               />
             ))}
           </>
@@ -886,6 +920,8 @@ export default function App() {
           articles={articles}
           setArticles={setArticles}
           showToast={showToast}
+          apiKey={apiKey}
+          setShowApiKeyModal={setShowApiKeyModal}
         />
       )}
 

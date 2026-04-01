@@ -336,6 +336,50 @@ app.delete("/api/articles/:id/summary", (req, res) => {
   res.json(article);
 });
 
+// POST translate headlines to Japanese
+app.post("/api/translate-headlines", async (req, res) => {
+  const { headlines } = req.body; // [{ id, headline }]
+  if (!Array.isArray(headlines) || headlines.length === 0) {
+    return res.status(400).json({ error: "headlines array is required" });
+  }
+
+  const apiKey = req.headers["x-api-key"];
+  if (!apiKey) return res.status(400).json({ error: "Missing x-api-key header" });
+
+  const client = new Anthropic({ apiKey });
+
+  const numbered = headlines.map((h, i) => `${i + 1}. ${h.headline}`).join("\n");
+  const prompt = `Translate the following English news headlines to Japanese. Return only the translations, numbered in the same order, with no additional text or explanation.\n\n${numbered}`;
+
+  try {
+    const message = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = message.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const translations = {};
+    lines.forEach((line, i) => {
+      const match = line.match(/^\d+[\.\)]\s*(.+)/);
+      if (match && i < headlines.length) {
+        translations[headlines[i].id] = match[1].trim();
+      }
+    });
+
+    res.json(translations);
+  } catch (err) {
+    console.error("Translation error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Session routes ───────────────────────────────────────────────────────────
 
 // GET all sessions
