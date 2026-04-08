@@ -315,10 +315,14 @@ Rules for TAGS:
       ? tagsMatch[1].split(",").map((t) => t.trim()).filter(Boolean)
       : [];
 
-    article.summary = JSON.stringify(bullets.length ? bullets : [text]);
-    article.tags = tags;
-    writeDb(db);
-    res.json(article);
+    // Re-read DB before writing to avoid clobbering concurrent changes (e.g. session assignment)
+    const freshDb = readDb();
+    const freshArticle = freshDb.articles.find((a) => a.id === id);
+    if (!freshArticle) return res.status(404).json({ error: "Not found" });
+    freshArticle.summary = JSON.stringify(bullets.length ? bullets : [text]);
+    freshArticle.tags = tags;
+    writeDb(freshDb);
+    res.json(freshArticle);
   } catch (err) {
     console.error("Anthropic error:", err.message);
     res.status(500).json({ error: err.message });
