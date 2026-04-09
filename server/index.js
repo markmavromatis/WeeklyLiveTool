@@ -192,6 +192,7 @@ app.post("/api/articles", async (req, res) => {
     id: db.nextId++,
     url,
     headline,
+    headline_jp: "",
     notes: notes || "",
     article_date,
     tags: [],
@@ -213,6 +214,18 @@ app.put("/api/articles/:id", (req, res) => {
   article.url = url;
   article.headline = headline;
   article.notes = notes || "";
+  writeDb(db);
+  res.json(article);
+});
+
+// PUT update article Japanese headline
+app.put("/api/articles/:id/headline-jp", (req, res) => {
+  const id = parseInt(req.params.id);
+  const { headline_jp } = req.body;
+  const db = readDb();
+  const article = db.articles.find((a) => a.id === id);
+  if (!article) return res.status(404).json({ error: "Not found" });
+  article.headline_jp = headline_jp || "";
   writeDb(db);
   res.json(article);
 });
@@ -403,21 +416,26 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
         return dateCmp !== 0 ? dateCmp : (a.headline || "").localeCompare(b.headline || "");
       });
 
-    // Translate headlines
-    let headlineMap = {};
-    if (sessionArticles.length > 0) {
-      const client = new Anthropic({ apiKey });
-      const numbered = sessionArticles.map((a, i) => `${i + 1}. ${a.headline}`).join("\n");
-      const message = await client.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 2048,
-        messages: [{ role: "user", content: `Translate the following English news headlines to Japanese. Return only the translations, numbered in the same order, with no additional text or explanation.\n\n${numbered}` }],
-      });
-      const text = message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-      text.split("\n").map((l) => l.trim()).filter(Boolean).forEach((line, i) => {
-        const match = line.match(/^\d+[\.\)]\s*(.+)/);
-        if (match && i < sessionArticles.length) headlineMap[sessionArticles[i].id] = match[1].trim();
-      });
+    // Use stored headline_jp; fall back to translating any that are missing
+    const needsTranslation = sessionArticles.filter((a) => !a.headline_jp);
+    const headlineMap = Object.fromEntries(sessionArticles.map((a) => [a.id, a.headline_jp || ""]));
+    if (needsTranslation.length > 0) {
+      try {
+        const client = new Anthropic({ apiKey });
+        const numbered = needsTranslation.map((a, i) => `${i + 1}. ${a.headline}`).join("\n");
+        const message = await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: `Translate the following English news headlines to Japanese. Return only the translations, numbered in the same order, with no additional text or explanation.\n\n${numbered}` }],
+        });
+        const text = message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+        text.split("\n").map((l) => l.trim()).filter(Boolean).forEach((line, i) => {
+          const match = line.match(/^\d+[\.\)]\s*(.+)/);
+          if (match && i < needsTranslation.length) headlineMap[needsTranslation[i].id] = match[1].trim();
+        });
+      } catch (e) {
+        console.warn("Could not translate missing headlines:", e.message);
+      }
     }
 
     const ARTICLES_PER_SLIDE = 10;

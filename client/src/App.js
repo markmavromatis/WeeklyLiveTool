@@ -7,6 +7,8 @@ const api = {
   getArticles: () => fetch("/api/articles").then((r) => r.json()),
   createArticle: (data) =>
     fetch("/api/articles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then((r) => r.json()),
+  setHeadlineJp: (id, headline_jp) =>
+    fetch(`/api/articles/${id}/headline-jp`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ headline_jp }) }).then((r) => r.json()),
   updateArticle: (id, data) =>
     fetch(`/api/articles/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then((r) => r.json()),
   deleteArticle: (id) => fetch(`/api/articles/${id}`, { method: "DELETE" }).then((r) => r.json()),
@@ -593,6 +595,7 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
     setModalArticle(undefined);
     showToast("Article added — generating summary…");
     handleGetSummary(created.id);
+    handleTranslateHeadline(created.id, created.headline);
 
     // Auto-assign to an upcoming session, or prompt to create one
     const target = findTargetSession(sessions);
@@ -626,6 +629,33 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
     await api.deleteArticle(id);
     setArticles((prev) => prev.filter((a) => a.id !== id));
     showToast("Article removed.");
+  };
+
+  const handleTranslateHeadline = async (id, headline) => {
+    if (!apiKey || !headline) return;
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 256,
+          messages: [{ role: "user", content: `Translate this English news headline to Japanese. Return only the translation, no explanation:\n\n${headline}` }],
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const headline_jp = data.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+      const updated = await api.setHeadlineJp(id, headline_jp);
+      setArticles((prev) => prev.map((a) => (a.id === updated.id ? { ...a, headline_jp: updated.headline_jp } : a)));
+    } catch (err) {
+      console.warn("Headline translation failed:", err.message);
+    }
   };
 
   const handleGetSummary = async (id) => {
