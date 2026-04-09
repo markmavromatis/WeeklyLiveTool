@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import { useState, useEffect, useCallback } from "react";
 import "./App.css";
 
@@ -438,51 +437,24 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
 }
 
 // ── Export Long List ──────────────────────────────────────────────────────────
-async function exportLongList(session, articles, apiKey = "") {
-  // Filter & sort: by article_date asc, then headline asc
-  const sessionArticles = articles
-    .filter((a) => a.session_id === session.id)
-    .sort((a, b) => {
-      const dateCmp = (a.article_date || "").localeCompare(b.article_date || "");
-      return dateCmp !== 0 ? dateCmp : a.headline.localeCompare(b.headline);
-    });
-
-  let headlineMap = {};
-  if (sessionArticles.length > 0) {
-    const translations = await api.translateHeadlines(
-      sessionArticles.map((a) => ({ id: a.id, headline: a.headline })),
-      apiKey
-    );
-    headlineMap = translations;
-  }
-
-  const rows = sessionArticles.map((a) => ({
-    Date: a.article_date
-      ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", {
-          month: "short", day: "numeric", year: "numeric",
-        })
-      : "",
-    Headline: a.headline,
-    URL: a.url,
-    "Japanese Headline": headlineMap[a.id] || "",
-  }));
-
-  const ws = XLSX.utils.json_to_sheet(rows);
-
-  // Column widths: Date=14, Headline=60, URL=60, Japanese Headline=60
-  ws["!cols"] = [{ wch: 14 }, { wch: 60 }, { wch: 60 }, { wch: 60 }];
-
-  // Style header row bold
-  ["A1", "B1", "C1", "D1"].forEach((ref) => {
-    if (ws[ref]) ws[ref].s = { font: { bold: true }, alignment: { horizontal: "center" } };
-  });
-
-  const wb = XLSX.utils.book_new();
-  const sheetName = `Session ${session.index}`;
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
+async function exportLongList(session, apiKey = "") {
   const dateStr = session.date.replace(/-/g, "");
-  XLSX.writeFile(wb, `long-list-session${session.index}-${dateStr}.xlsx`);
+  const fileName = `long-list-session${session.index}-${dateStr}.pptx`;
+  const res = await fetch(`/api/sessions/${session.id}/export-pptx`, {
+    method: "POST",
+    headers: { "x-api-key": apiKey },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Session Card ──────────────────────────────────────────────────────────────
@@ -495,7 +467,7 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
     if (!apiKey) { setShowApiKeyModal(true); return; }
     setExporting(true);
     try {
-      await exportLongList(session, articles, apiKey);
+      await exportLongList(session, apiKey);
     } catch (e) {
       showToast("Export failed: " + e.message, true);
     } finally {

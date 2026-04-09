@@ -3,6 +3,7 @@ const cors = require("cors");
 const Anthropic = require("@anthropic-ai/sdk");
 const path = require("path");
 const fs = require("fs");
+const PptxGenJS = require("pptxgenjs");
 const https = require("https");
 const http = require("http");
 
@@ -380,6 +381,100 @@ app.post("/api/translate-headlines", async (req, res) => {
     res.json(translations);
   } catch (err) {
     console.error("Translation error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST export long list as PPTX
+app.post("/api/sessions/:id/export-pptx", async (req, res) => {
+  const sessionId = parseInt(req.params.id);
+  const apiKey = req.headers["x-api-key"];
+  if (!apiKey) return res.status(400).json({ error: "Missing x-api-key header" });
+
+  const db = readDb();
+  const session = db.sessions.find((s) => s.id === sessionId);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+
+  try {
+    const sessionArticles = db.articles
+      .filter((a) => a.session_id === sessionId)
+      .sort((a, b) => {
+        const dateCmp = (a.article_date || "").localeCompare(b.article_date || "");
+        return dateCmp !== 0 ? dateCmp : (a.headline || "").localeCompare(b.headline || "");
+      });
+
+    // Translate headlines
+    let headlineMap = {};
+    if (sessionArticles.length > 0) {
+      const client = new Anthropic({ apiKey });
+      const numbered = sessionArticles.map((a, i) => `${i + 1}. ${a.headline}`).join("\n");
+      const message = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: `Translate the following English news headlines to Japanese. Return only the translations, numbered in the same order, with no additional text or explanation.\n\n${numbered}` }],
+      });
+      const text = message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+      text.split("\n").map((l) => l.trim()).filter(Boolean).forEach((line, i) => {
+        const match = line.match(/^\d+[\.\)]\s*(.+)/);
+        if (match && i < sessionArticles.length) headlineMap[sessionArticles[i].id] = match[1].trim();
+      });
+    }
+
+    const ARTICLES_PER_SLIDE = 10;
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+
+    const HEADER = ["Date", "Headline", "URL", "Japanese Headline"];
+    const COL_W  = [1.1, 3.6, 3.6, 4.5];
+    const LEFT   = 0.25;
+    const TOP    = 0.5;
+    const TABLE_H = 6.6;
+    const totalPages = Math.max(1, Math.ceil(sessionArticles.length / ARTICLES_PER_SLIDE));
+
+    for (let page = 0; page < totalPages; page++) {
+      const slide = pptx.addSlide();
+      const pageLabel = totalPages > 1 ? ` (${page + 1}/${totalPages})` : "";
+      slide.addText(`Long List — Session #${session.index}${pageLabel}`, {
+        x: LEFT, y: 0.1, w: 12.8, h: 0.35,
+        fontSize: 14, bold: true, color: "1a1a2e",
+      });
+
+      const chunk = sessionArticles.slice(page * ARTICLES_PER_SLIDE, (page + 1) * ARTICLES_PER_SLIDE);
+      const rows = [
+        HEADER.map((h) => ({
+          text: h,
+          options: { bold: true, fill: { color: "1a1a2e" }, color: "FFFFFF", fontSize: 9, align: "center", valign: "middle" },
+        })),
+        ...chunk.map((a, i) => {
+          const dateStr = a.article_date
+            ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            : "";
+          const fillColor = i % 2 === 0 ? "F5F5F5" : "FFFFFF";
+          return [
+            { text: dateStr, options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: a.headline || "", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: "Link", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", hyperlink: { url: a.url } } },
+            { text: headlineMap[a.id] || "", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
+          ];
+        }),
+      ];
+
+      slide.addTable(rows, {
+        x: LEFT, y: TOP, w: COL_W.reduce((s, v) => s + v, 0), h: TABLE_H,
+        colW: COL_W,
+        border: { type: "solid", pt: 0.5, color: "CCCCCC" },
+        rowH: TABLE_H / (chunk.length + 1),
+      });
+    }
+
+    const dateStr = session.date.replace(/-/g, "");
+    const fileName = `long-list-session${session.index}-${dateStr}.pptx`;
+    const buffer = await pptx.write("nodebuffer");
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error("PPTX export error:", err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
