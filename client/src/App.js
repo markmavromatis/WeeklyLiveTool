@@ -61,13 +61,11 @@ async function fetchArticleText(url) {
 }
 
 // ── Session auto-assign helpers ──────────────────────────────────────────────
-function nextFriday() {
-  const d = new Date();
+function nextFriday(fromDateStr) {
+  const d = fromDateStr ? new Date(fromDateStr + "T12:00:00") : new Date();
   d.setHours(0, 0, 0, 0);
   const day = d.getDay(); // 0=Sun … 5=Fri … 6=Sat
-  const daysUntilFriday = day <= 5 ? 5 - day : 6; // if today is Fri, next Fri = 7 days
-  // If today is Friday, schedule for next Friday (7 days out)
-  const add = day === 5 ? 7 : daysUntilFriday;
+  const add = day === 5 ? 7 : (5 - day + 7) % 7 || 7;
   d.setDate(d.getDate() + add);
   return d.toISOString().slice(0, 10);
 }
@@ -180,9 +178,9 @@ function ArticleModal({ article, onClose, onSave }) {
 }
 
 // ── Session Modal ─────────────────────────────────────────────────────────────
-function SessionModal({ session, onClose, onSave }) {
-  const [date, setDate] = useState(session?.date || new Date().toISOString().slice(0, 10));
-  const [index, setIndex] = useState(session?.index ?? "");
+function SessionModal({ session, onClose, onSave, defaultIndex, defaultDate }) {
+  const [date, setDate] = useState(session?.date || defaultDate || nextFriday());
+  const [index, setIndex] = useState(session?.index ?? defaultIndex ?? "");
   const [participantInput, setParticipantInput] = useState("");
   const [participants, setParticipants] = useState(session?.participants || []);
   const [saving, setSaving] = useState(false);
@@ -856,7 +854,13 @@ function SessionsScreen({ sessions, setSessions, articles, setArticles, showToas
       </main>
 
       {modalSession !== undefined && (
-        <SessionModal session={modalSession} onClose={() => setModalSession(undefined)} onSave={handleSave} />
+        <SessionModal
+          session={modalSession}
+          onClose={() => setModalSession(undefined)}
+          onSave={handleSave}
+          defaultIndex={modalSession ? undefined : Math.max(0, ...sessions.map((s) => s.index)) + 1}
+          defaultDate={modalSession ? undefined : nextFriday(sessions.reduce((latest, s) => s.date > latest ? s.date : latest, ""))}
+        />
       )}
     </>
   );
