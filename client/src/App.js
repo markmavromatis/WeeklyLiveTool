@@ -354,6 +354,7 @@ function TagEditor({ tags = [], onChange }) {
 function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSummary, loadingId, sessionBadge, sessions, onAssign, onUnassign, onTagsChange }) {
   const isLoading = loadingId === article.id;
   const [open, setOpen] = useState(isLoading);
+  const [editingMeta, setEditingMeta] = useState(false);
   useEffect(() => { if (isLoading) setOpen(true); }, [isLoading]);
   const summary = article.summary ? JSON.parse(article.summary) : null;
   const tags = article.tags || [];
@@ -381,32 +382,33 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
         </div>
         <div className="card-actions">
           <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(article); }}>EDIT</button>
+          <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setOpen(true); setEditingMeta((v) => !v); }}>{editingMeta ? "DONE" : "ASSIGN"}</button>
           <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); onDelete(article.id); }}>REMOVE</button>
           <span className={`chevron ${open ? "open" : ""}`}>▾</span>
         </div>
       </div>
       {open && (
         <div className="card-body">
-          <div className="card-section">
-            <div className="section-label">Tags</div>
-            <TagEditor tags={tags} onChange={(newTags) => onTagsChange(article.id, newTags)} />
-          </div>
-          <div className="card-section">
-            <div className="section-label">Live Session</div>
-            <select className="session-select" value={article.session_id || ""} onChange={handleSessionChange}>
-              <option value="">— Unassigned —</option>
-              {[...sessions].sort((a, b) => b.index - a.index).map((s) => (
-                <option key={s.id} value={s.id}>
-                  #{s.index} · {new Date(s.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  {s.participants.length > 0 ? " · " + s.participants.join(", ") : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="card-section">
-            <div className="section-label">Personal Notes</div>
-            <div className={`notes-text ${!article.notes ? "notes-empty" : ""}`}>{article.notes || "No notes added."}</div>
-          </div>
+          {editingMeta && (
+            <div className="card-section card-section-row">
+              <div className="card-section-col">
+                <div className="section-label">Tags</div>
+                <TagEditor tags={tags} onChange={(newTags) => onTagsChange(article.id, newTags)} />
+              </div>
+              <div className="card-section-col card-section-col--session">
+                <div className="section-label">Live Session</div>
+                <select className="session-select" value={article.session_id || ""} onChange={handleSessionChange}>
+                  <option value="">— Unassigned —</option>
+                  {[...sessions].sort((a, b) => b.index - a.index).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      #{s.index} · {new Date(s.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {s.participants.length > 0 ? " · " + s.participants.join(", ") : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="card-section">
             <div className="section-label">AI Summary</div>
             {isLoading ? (
@@ -429,6 +431,10 @@ function ArticleCard({ article, index, onEdit, onDelete, onGetSummary, onClearSu
                 </div>
               </>
             )}
+          </div>
+          <div className="card-section">
+            <div className="section-label">Personal Notes</div>
+            <div className={`notes-text ${!article.notes ? "notes-empty" : ""}`}>{article.notes || "No notes added."}</div>
           </div>
         </div>
       )}

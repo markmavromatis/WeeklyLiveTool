@@ -320,7 +320,7 @@ input[type="search"]:focus { border-color: var(--ink); }
 
 /* ── CARD BODY ── */
 .card-body {
-  padding: 20px 24px 24px 52px;
+  padding: 12px 24px 16px 52px;
   border-top: 1px solid var(--border);
   animation: slideDown 0.18s ease;
 }
@@ -330,8 +330,11 @@ input[type="search"]:focus { border-color: var(--ink); }
   to { opacity: 1; transform: none; }
 }
 
-.card-section { margin-bottom: 20px; }
+.card-section { margin-bottom: 12px; }
 .card-section:last-child { margin-bottom: 0; }
+.card-section-row { display: flex; gap: 24px; align-items: flex-start; }
+.card-section-col { flex: 1; }
+.card-section-col--session { flex: 0 0 auto; }
 
 .section-label {
   font-size: 9px;
@@ -801,7 +804,6 @@ textarea { min-height: 80px; }
   border-radius: var(--radius);
   padding: 8px 10px;
   width: 100%;
-  max-width: 420px;
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s;
