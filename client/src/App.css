@@ -549,7 +549,13 @@ textarea { min-height: 80px; }
   animation: slideUp 0.2s ease;
 }
 
-.toast.error { background: var(--accent); }
+.toast.error {
+  background: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 14px 20px;
+  box-shadow: 0 4px 24px rgba(200,55,45,0.35);
+}
 
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(8px); }

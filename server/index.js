@@ -175,6 +175,10 @@ app.post("/api/articles", async (req, res) => {
   const { url, notes } = req.body;
   if (!url) return res.status(400).json({ error: "url is required" });
 
+  const db = readDb();
+  const existing = db.articles.find((a) => a.url === url);
+  if (existing) return res.status(409).json({ error: "duplicate", article: existing });
+
   let headline = url;
   let article_date = new Date().toISOString().slice(0, 10);
 
@@ -186,8 +190,6 @@ app.post("/api/articles", async (req, res) => {
   } catch (e) {
     console.warn("Could not fetch URL for meta:", e.message);
   }
-
-  const db = readDb();
   const article = {
     id: db.nextId++,
     url,

@@ -595,6 +595,10 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
     }
 
     const created = await api.createArticle(data);
+    if (created.error === "duplicate") {
+      showToast("This article has already been added.", true);
+      return;
+    }
     setArticles((prev) => [created, ...prev]);
     setModalArticle(undefined);
     showToast("Article added — generating summary…");
