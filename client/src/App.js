@@ -233,6 +233,7 @@ ${articles_html}
 // ── Article Modal ─────────────────────────────────────────────────────────────
 function ArticleModal({ article, onClose, onSave }) {
   const [url, setUrl] = useState(article?.url || "");
+  const [headline, setHeadline] = useState(article?.headline || "");
   const [notes, setNotes] = useState(article?.notes || "");
   const [saving, setSaving] = useState(false);
 
@@ -240,7 +241,7 @@ function ArticleModal({ article, onClose, onSave }) {
     e.preventDefault();
     if (!url.trim()) return;
     setSaving(true);
-    await onSave({ url: url.trim(), notes: notes.trim() });
+    await onSave({ url: url.trim(), headline: headline.trim(), notes: notes.trim() });
     setSaving(false);
   };
 
@@ -259,9 +260,15 @@ function ArticleModal({ article, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {article && (
+              <div className="field">
+                <label>Headline</label>
+                <input type="text" value={headline} onChange={(e) => setHeadline(e.target.value)} autoFocus />
+              </div>
+            )}
             <div className="field">
               <label>URL *</label>
-              <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoFocus required />
+              <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." required autoFocus={!article} />
             </div>
             <div className="field">
               <label>Personal Notes</label>
