@@ -146,13 +146,23 @@ function SlackExportModal({ articles, onClose }) {
 
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+  const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" });
+
   const handleExport = () => {
-    const articles_html = matchingArticles.map((a) => {
+    const blocks = [];
+    let lastDate = null;
+    for (const a of matchingArticles) {
+      const d = a.created_at.slice(0, 10);
+      if (d !== lastDate) {
+        blocks.push(`<h2 class="date-marker">${esc(fmtDate(d))}</h2>`);
+        lastDate = d;
+      }
       const bullets = a.summary
         ? `<ul>${JSON.parse(a.summary).map((b) => `<li>${esc(b)}</li>`).join("")}</ul>`
         : "";
-      return `<div class="article"><strong>${esc(a.headline)}</strong> — <a href="${esc(a.url)}">Link</a>${bullets}</div>`;
-    }).join("\n");
+      blocks.push(`<div class="article"><strong>${esc(a.headline)}</strong> — <a href="${esc(a.url)}">Link</a>${bullets}</div>`);
+    }
+    const articles_html = blocks.join("\n");
 
     const html = `<!DOCTYPE html>
 <html>
@@ -161,6 +171,8 @@ function SlackExportModal({ articles, onClose }) {
 <title>Export</title>
 <style>
   body { font-family: sans-serif; max-width: 860px; margin: 40px auto; line-height: 1.6; color: #1a1814; }
+  .date-marker { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #6b6760; border-bottom: 2px solid #1a1814; padding-bottom: 6px; margin: 32px 0 16px; }
+  .date-marker:first-child { margin-top: 0; }
   .article { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0ddd7; }
   .article:last-child { border-bottom: none; }
   a { color: #c8372d; }
