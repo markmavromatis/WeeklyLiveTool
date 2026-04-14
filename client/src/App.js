@@ -129,6 +129,107 @@ function SessionPromptModal({ fridayDate, onYes, onNo }) {
   );
 }
 
+// ── Slack Export Modal ────────────────────────────────────────────────────────
+function SlackExportModal({ articles, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [fromDate, setFromDate] = useState(today);
+  const [toDate, setToDate] = useState(today);
+
+  const matchingArticles = articles
+    .filter((a) => {
+      if (!a.created_at) return false;
+      const d = a.created_at.slice(0, 10);
+      return d >= fromDate && d <= toDate;
+    })
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const handleExport = () => {
+    const articles_html = matchingArticles.map((a) => {
+      const bullets = a.summary
+        ? `<ul>${JSON.parse(a.summary).map((b) => `<li>${esc(b)}</li>`).join("")}</ul>`
+        : "";
+      return `<div class="article"><strong>${esc(a.headline)}</strong> — <a href="${esc(a.url)}">Link</a>${bullets}</div>`;
+    }).join("\n");
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Export</title>
+<style>
+  body { font-family: sans-serif; max-width: 860px; margin: 40px auto; line-height: 1.6; color: #1a1814; }
+  .article { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0ddd7; }
+  .article:last-child { border-bottom: none; }
+  a { color: #c8372d; }
+  ul { margin: 8px 0 0; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+${articles_html}
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `export-${fromDate}${fromDate !== toDate ? `_${toDate}` : ""}.html`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
+    onClose();
+  };
+
+  const noSummary = matchingArticles.filter((a) => !a.summary).length;
+
+  useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <span className="modal-title">Export to Slack</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="field-row">
+            <div className="field">
+              <label>From</label>
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>To</label>
+              <input type="date" value={toDate} min={fromDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+          </div>
+          <div className="export-summary">
+            {matchingArticles.length} article{matchingArticles.length !== 1 ? "s" : ""} selected
+            {noSummary > 0 && <span className="export-warn"> · {noSummary} without summary</span>}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={matchingArticles.length === 0}
+            onClick={handleExport}
+          >
+            EXPORT
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Article Modal ─────────────────────────────────────────────────────────────
 function ArticleModal({ article, onClose, onSave }) {
   const [url, setUrl] = useState(article?.url || "");
@@ -573,6 +674,7 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
   const [modalArticle, setModalArticle] = useState(undefined);
   const [loadingId, setLoadingId] = useState(null);
   const [sessionPrompt, setSessionPrompt] = useState(null); // { articleId, fridayDate }
+  const [showSlackExport, setShowSlackExport] = useState(false);
 
   const sessionMap = Object.fromEntries(sessions.map((s) => [s.id, s.index]));
 
@@ -727,10 +829,13 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
           </div>
           <span className="count-badge">{filtered.length} article{filtered.length !== 1 ? "s" : ""}</span>
         </div>
-        <button className="btn btn-primary" onClick={() => setModalArticle(null)}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          ADD ARTICLE
-        </button>
+        <div className="toolbar-right-actions">
+          <button className="btn btn-ghost" onClick={() => setShowSlackExport(true)}>EXPORT TO SLACK</button>
+          <button className="btn btn-primary" onClick={() => setModalArticle(null)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            ADD ARTICLE
+          </button>
+        </div>
       </div>
       {allTags.length > 0 && (
         <div className="tag-filter-bar">
@@ -781,6 +886,9 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
           onYes={handleSessionPromptYes}
           onNo={handleSessionPromptNo}
         />
+      )}
+      {showSlackExport && (
+        <SlackExportModal articles={articles} onClose={() => setShowSlackExport(false)} />
       )}
     </>
   );

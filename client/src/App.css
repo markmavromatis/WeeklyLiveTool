@@ -111,6 +111,80 @@ body {
   flex: 1;
 }
 
+.toolbar-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Slack Export Modal ── */
+.date-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 4px;
+}
+
+.date-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.1s;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.date-check-row:hover { background: var(--tag-bg); }
+
+.date-check-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.date-check-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-today-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--ink);
+  color: #f5f3ef;
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.date-count {
+  color: var(--ink-faint);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.export-summary {
+  font-size: 11px;
+  color: var(--ink-muted);
+  padding-top: 10px;
+}
+
+.export-warn { color: var(--accent); }
+
 .search-wrap {
   position: relative;
   flex: 1;
@@ -482,6 +556,7 @@ label {
 input[type="text"],
 input[type="url"],
 input[type="password"],
+input[type="date"],
 textarea {
   width: 100%;
   padding: 10px 12px;
@@ -499,6 +574,7 @@ textarea {
 input[type="text"]:focus,
 input[type="url"]:focus,
 input[type="password"]:focus,
+input[type="date"]:focus,
 textarea:focus { border-color: var(--ink); background: white; }
 
 textarea { min-height: 80px; }
