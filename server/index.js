@@ -444,11 +444,11 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
 
-    const HEADER = ["Date", "Headline", "URL", "Japanese Headline"];
-    const COL_W  = [1.1, 3.6, 3.6, 4.5];
+    const HEADER = ["Date", "Headline", "Japanese Headline", "URL"];
+    const COL_W  = [1.1, 4.2, 5.5, 0.8];
     const LEFT   = 0.25;
     const TOP    = 0.5;
-    const TABLE_H = 6.6;
+    const TABLE_H = 3.3;
     const totalPages = Math.max(1, Math.ceil(sessionArticles.length / ARTICLES_PER_SLIDE));
 
     for (let page = 0; page < totalPages; page++) {
@@ -463,18 +463,18 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
       const rows = [
         HEADER.map((h) => ({
           text: h,
-          options: { bold: true, fill: { color: "1a1a2e" }, color: "FFFFFF", fontSize: 9, align: "center", valign: "middle" },
+          options: { bold: true, fill: { color: "1a1a2e" }, color: "FFFFFF", fontSize: 18, align: "center", valign: "middle" },
         })),
         ...chunk.map((a, i) => {
           const dateStr = a.article_date
-            ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
             : "";
           const fillColor = i % 2 === 0 ? "F5F5F5" : "FFFFFF";
           return [
-            { text: dateStr, options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
-            { text: a.headline || "", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
-            { text: "Link", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", hyperlink: { url: a.url } } },
-            { text: headlineMap[a.id] || "", options: { fontSize: 8, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: dateStr, options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: a.headline || "", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: headlineMap[a.id] || "", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: "Link", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", align: "center", hyperlink: { url: a.url } } },
           ];
         }),
       ];
@@ -483,7 +483,7 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
         x: LEFT, y: TOP, w: COL_W.reduce((s, v) => s + v, 0), h: TABLE_H,
         colW: COL_W,
         border: { type: "solid", pt: 0.5, color: "CCCCCC" },
-        rowH: TABLE_H / (chunk.length + 1),
+        rowH: [0.25, ...Array(chunk.length).fill((TABLE_H - 0.25) / chunk.length / 2)],
       });
     }
 

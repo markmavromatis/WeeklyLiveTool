@@ -619,6 +619,19 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
           </div>
         </div>
         <div className="card-actions">
+          <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setShowPicker((p) => !p); }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            LINK ARTICLE
+          </button>
+          <button
+            className="btn btn-ghost btn-sm export-btn"
+            disabled={exporting}
+            onClick={(e) => { e.stopPropagation(); handleExport(); }}
+            title="Download all session articles as a PowerPoint"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {exporting ? "TRANSLATING…" : "EXPORT LONG LIST"}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(session); }}>EDIT</button>
           <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}>REMOVE</button>
           <span className={`chevron ${open ? "open" : ""}`}>▾</span>
@@ -627,6 +640,24 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
 
       {open && (
         <div className="session-body">
+          {showPicker && (
+            <div className="article-picker">
+              <div className="article-picker-header">
+                <span>Select an unassigned article</span>
+                <button className="modal-close" onClick={() => setShowPicker(false)}>×</button>
+              </div>
+              {unassigned.length === 0
+                ? <div className="summary-empty" style={{ padding: "12px 0" }}>All articles are already assigned.</div>
+                : unassigned.map((a) => (
+                  <div key={a.id} className="picker-article-row" onClick={() => { onAssign(session.id, a.id); setShowPicker(false); }}>
+                    <div className="session-article-headline">{a.headline}</div>
+                    {a.article_date && <span className="session-article-date">{new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                  </div>
+                ))
+              }
+            </div>
+          )}
+
           <div className="section-label">Articles</div>
 
           {sessionArticles.length === 0 && <div className="summary-empty">No articles assigned yet.</div>}
@@ -643,43 +674,6 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
               <button className="btn btn-danger btn-sm" onClick={() => onUnassign(session.id, a.id)}>UNLINK</button>
             </div>
           ))}
-
-          <div className="session-footer-actions">
-            <button
-              className="btn btn-ghost btn-sm export-btn"
-              disabled={exporting}
-              onClick={handleExport}
-              title="Download all session articles as Excel (with Japanese translations)"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              {exporting ? "TRANSLATING…" : "EXPORT LONG LIST"}
-            </button>
-          </div>
-
-          <div className="session-add-article">
-            {showPicker ? (
-              <div className="article-picker">
-                <div className="article-picker-header">
-                  <span>Select an unassigned article</span>
-                  <button className="modal-close" onClick={() => setShowPicker(false)}>×</button>
-                </div>
-                {unassigned.length === 0
-                  ? <div className="summary-empty" style={{ padding: "12px 0" }}>All articles are already assigned.</div>
-                  : unassigned.map((a) => (
-                    <div key={a.id} className="picker-article-row" onClick={() => { onAssign(session.id, a.id); setShowPicker(false); }}>
-                      <div className="session-article-headline">{a.headline}</div>
-                      {a.article_date && <span className="session-article-date">{new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
-                    </div>
-                  ))
-                }
-              </div>
-            ) : (
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowPicker(true)}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                LINK ARTICLE
-              </button>
-            )}
-          </div>
         </div>
       )}
     </div>
