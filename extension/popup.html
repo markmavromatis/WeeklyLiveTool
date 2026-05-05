@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <span class="logo">Weekly Live Tool</span>
+    <button id="btn-settings" class="icon-btn" title="Settings">&#9881;</button>
+  </div>
+
+  <div id="settings-panel" class="settings-panel" hidden>
+    <!-- Shown when API key is already saved -->
+    <div id="settings-compact">
+      <div class="compact-row">
+        <span class="compact-label">Server</span>
+        <span id="server-url-text" class="muted"></span>
+      </div>
+      <div class="compact-row">
+        <span class="compact-label">API Key</span>
+        <div class="key-status-row">
+          <span class="muted">Configured ✓</span>
+          <button id="btn-change-settings" class="btn-link" type="button">Change</button>
+        </div>
+      </div>
+    </div>
+    <!-- Shown when key is missing or user clicks Change -->
+    <div id="settings-form" style="display:none">
+      <label class="field-label">Server URL
+        <input id="inp-server-url" type="text" placeholder="http://localhost:3001">
+      </label>
+      <label class="field-label">Anthropic API Key
+        <input id="inp-api-key" type="password" placeholder="sk-ant-...">
+      </label>
+      <button id="btn-save-settings" class="btn-secondary">Save</button>
+    </div>
+  </div>
+
+  <div id="view-loading" class="view center-view">
+    <div class="spinner"></div>
+    <p class="muted">Analyzing page&hellip;</p>
+  </div>
+
+  <div id="view-error" class="view center-view" hidden>
+    <p class="badge badge-error" id="error-msg"></p>
+  </div>
+
+  <div id="view-main" class="view" hidden>
+    <p class="url-display" id="url-display"></p>
+
+    <label class="field-label">Headline
+      <input id="inp-headline" type="text" placeholder="Article headline">
+    </label>
+
+    <div id="state-new" class="state" hidden>
+      <button id="btn-add" class="btn-primary full-width">Add Article</button>
+    </div>
+
+    <div id="state-exists" class="state" hidden>
+      <div class="badge badge-warn">Already in your database</div>
+      <p class="existing-label">Current headline in DB:</p>
+      <p class="existing-headline" id="existing-headline"></p>
+      <button id="btn-override" class="btn-primary full-width">Refresh Article</button>
+    </div>
+
+    <div id="state-done" class="state" hidden>
+      <div class="badge badge-success" id="done-msg"></div>
+    </div>
+
+    <button id="btn-summary" class="btn-primary full-width" hidden>Generate Summary</button>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

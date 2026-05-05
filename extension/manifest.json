@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Weekly Live Tool",
+  "version": "1.0.0",
+  "description": "Add articles to Weekly Live Tool from any webpage",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["http://localhost:*/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Weekly Live Tool"
+  }
+}

@@ -30,7 +30,12 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 if (!fs.existsSync(DB_PATH)) writeDb({ articles: [], sessions: [], nextId: 1, nextSessionId: 1 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors({ origin: "http://localhost:3000" }));
+app.use(cors({
+  origin: (origin, cb) => {
+    const allowed = !origin || origin === "http://localhost:3000" || /^chrome-extension:\/\//.test(origin);
+    cb(null, allowed ? true : false);
+  },
+}));
 app.use(express.json({ limit: "2mb" }));
 
 // ── Server-side URL fetcher ───────────────────────────────────────────────────
@@ -255,6 +260,7 @@ app.delete("/api/articles/:id", (req, res) => {
 
 // POST generate AI summary — fetches article server-side, sends to Claude
 app.post("/api/articles/:id/summary", async (req, res) => {
+  try {
   const id = parseInt(req.params.id);
   const db = readDb();
   const article = db.articles.find((a) => a.id === id);
@@ -264,7 +270,7 @@ app.post("/api/articles/:id/summary", async (req, res) => {
   if (!apiKey) return res.status(400).json({ error: "Missing x-api-key header" });
 
   // Article text is fetched browser-side (with your cookies, so paywalls work).
-  const bodyText = (req.body.articleText || "").trim();
+  const bodyText = (req.body?.articleText || "").trim();
 
   const client = new Anthropic({ apiKey });
 
@@ -303,7 +309,6 @@ Rules for TAGS:
 - You may add a custom tag if none of the presets fit, but keep it short (1-2 words, title case)
 - Output only the tag names separated by commas, no extra text`;
 
-  try {
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
@@ -340,7 +345,7 @@ Rules for TAGS:
     writeDb(freshDb);
     res.json(freshArticle);
   } catch (err) {
-    console.error("Anthropic error:", err.message);
+    console.error("Summary error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
