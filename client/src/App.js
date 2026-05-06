@@ -243,17 +243,23 @@ ${articles_html}
 }
 
 // ── Article Modal ─────────────────────────────────────────────────────────────
-function ArticleModal({ article, onClose, onSave }) {
+function ArticleModal({ article, sessions, onClose, onSave }) {
   const [url, setUrl] = useState(article?.url || "");
   const [headline, setHeadline] = useState(article?.headline || "");
   const [notes, setNotes] = useState(article?.notes || "");
+  const [sessionId, setSessionId] = useState(article?.session_id ?? "");
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!url.trim()) return;
     setSaving(true);
-    await onSave({ url: url.trim(), headline: headline.trim(), notes: notes.trim() });
+    await onSave({
+      url: url.trim(),
+      headline: headline.trim(),
+      notes: notes.trim(),
+      ...(article ? { session_id: sessionId === "" ? null : parseInt(sessionId, 10) } : {}),
+    });
     setSaving(false);
   };
 
@@ -286,6 +292,21 @@ function ArticleModal({ article, onClose, onSave }) {
               <label>Personal Notes</label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Your thoughts, why this matters for the broadcast..." />
             </div>
+            {article && (
+              <div className="field">
+                <label>Weekly Live Session</label>
+                <select value={sessionId} onChange={(e) => setSessionId(e.target.value)}>
+                  <option value="">Unassigned</option>
+                  {[...sessions]
+                    .sort((a, b) => b.index - a.index)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {`Session #${s.index} — ${new Date(s.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -702,7 +723,15 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
 
   const handleSave = async (data) => {
     if (modalArticle?.id) {
-      const updated = await api.updateArticle(modalArticle.id, data);
+      const { session_id, ...articleData } = data;
+      let updated = await api.updateArticle(modalArticle.id, articleData);
+      if (session_id !== undefined && session_id !== modalArticle.session_id) {
+        if (session_id) {
+          updated = await api.assignArticle(session_id, modalArticle.id);
+        } else if (modalArticle.session_id) {
+          updated = await api.unassignArticle(modalArticle.session_id, modalArticle.id);
+        }
+      }
       setArticles((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       showToast("Article updated.");
       setModalArticle(undefined);
@@ -891,7 +920,7 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
       </main>
 
       {modalArticle !== undefined && (
-        <ArticleModal article={modalArticle} onClose={() => setModalArticle(undefined)} onSave={handleSave} />
+        <ArticleModal article={modalArticle} sessions={sessions} onClose={() => setModalArticle(undefined)} onSave={handleSave} />
       )}
       {sessionPrompt && (
         <SessionPromptModal

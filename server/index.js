@@ -123,7 +123,7 @@ function extractFromHtml(html) {
       const paragraphs = [];
       const matches = json.matchAll(/"(?:body|content|text|description)":\s*"([^"]{80,})"/g);
       for (const m of matches) {
-        const cleaned = decodeHtmlEntities(m[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/<[^>]+>/g, " "));
+        const cleaned = decodeHtmlEntities(m[1].replace(/\\n/g, " ").replace(/\\\"/g, '"').replace(/<[^>]+>/g, " "));
         if (cleaned.length > 80) paragraphs.push(cleaned);
       }
       if (paragraphs.length > 0) {
@@ -142,7 +142,7 @@ function extractFromHtml(html) {
         try {
           const inner = block.replace(/<script[^>]*>|<\/script>/gi, "");
           const ld = JSON.parse(inner);
-          const body = ld.articleBody || ld.description || (Array.isArray(ld["@graph"]) && ld["@graph"].find(n => n.articleBody)?.articleBody);
+          const body = ld.articleBody || ld.description || (Array.isArray(ld["@graph"]) && ld["@graph"].find((n) => n.articleBody)?.articleBody);
           if (body && body.length > 100) {
             bodyText = decodeHtmlEntities(body).replace(/\s+/g, " ").trim().slice(0, 12000);
             break;
@@ -166,6 +166,26 @@ function extractFromHtml(html) {
 
   return { headline, article_date, bodyText };
 }
+
+function findTargetSession(sessions) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const future = sessions
+    .filter((s) => new Date(s.date + "T12:00:00") >= today)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (future.length === 0) return null;
+
+  const nearest = [...future].sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+  const nearestDate = new Date(nearest.date + "T12:00:00");
+  if (nearestDate.getTime() === tomorrow.getTime() && future.length === 1) return null;
+
+  return future[0];
+}
+
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -195,6 +215,7 @@ app.post("/api/articles", async (req, res) => {
   } catch (e) {
     console.warn("Could not fetch URL for meta:", e.message);
   }
+  const targetSession = findTargetSession(db.sessions);
   const article = {
     id: db.nextId++,
     url,
@@ -204,6 +225,7 @@ app.post("/api/articles", async (req, res) => {
     article_date,
     tags: [],
     summary: null,
+    session_id: targetSession ? targetSession.id : null,
     created_at: new Date().toISOString(),
   };
   db.articles.push(article);
