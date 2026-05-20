@@ -467,6 +467,30 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
       }
     }
 
+    // Ask Claude which 10 articles are most important for NTT Docomo
+    let topArticles = [];
+    if (sessionArticles.length > 0) {
+      try {
+        const rankClient = new Anthropic({ apiKey });
+        const numbered = sessionArticles.map((a, i) => `${i + 1}. ${a.headline}`).join("\n");
+        const rankMsg = await rankClient.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 256,
+          messages: [{
+            role: "user",
+            content: `You are an analyst for NTT Docomo, Japan's leading telecommunications company. From the following list of technology news headlines, identify the 10 most important and relevant articles for NTT Docomo's strategic interests (telecommunications, 5G/6G, mobile technology, AI, IoT, digital transformation, Japan market, etc.). Return only a comma-separated list of the article numbers (e.g. "1, 3, 5, 7, 9, 12, 15, 18, 20, 23"), with no other text.\n\n${numbered}`,
+          }],
+        });
+        const rankText = rankMsg.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+        const indices = rankText.split(",")
+          .map((s) => parseInt(s.trim()) - 1)
+          .filter((i) => !isNaN(i) && i >= 0 && i < sessionArticles.length);
+        topArticles = [...new Set(indices)].slice(0, 10).map((i) => sessionArticles[i]);
+      } catch (e) {
+        console.warn("Could not rank articles for NTT Docomo:", e.message);
+      }
+    }
+
     const ARTICLES_PER_SLIDE = 10;
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
@@ -476,42 +500,55 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
     const LEFT   = 0.25;
     const TOP    = 0.5;
     const TABLE_H = 3.3;
-    const totalPages = Math.max(1, Math.ceil(sessionArticles.length / ARTICLES_PER_SLIDE));
 
-    for (let page = 0; page < totalPages; page++) {
+    const buildSlide = (title, titleColor, headerColor, articles) => {
       const slide = pptx.addSlide();
-      const pageLabel = totalPages > 1 ? ` (${page + 1}/${totalPages})` : "";
-      slide.addText(`Long List — Session #${session.index}${pageLabel}`, {
+      slide.addText(title, {
         x: LEFT, y: 0.1, w: 12.8, h: 0.35,
-        fontSize: 14, bold: true, color: "1a1a2e",
+        fontSize: 14, bold: true, color: titleColor,
       });
-
-      const chunk = sessionArticles.slice(page * ARTICLES_PER_SLIDE, (page + 1) * ARTICLES_PER_SLIDE);
       const rows = [
         HEADER.map((h) => ({
           text: h,
-          options: { bold: true, fill: { color: "1a1a2e" }, color: "FFFFFF", fontSize: 18, align: "center", valign: "middle" },
+          options: { bold: true, fill: { color: headerColor }, color: "FFFFFF", fontSize: 14, align: "center", valign: "middle" },
         })),
-        ...chunk.map((a, i) => {
+        ...articles.map((a, i) => {
           const dateStr = a.article_date
             ? new Date(a.article_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
             : "";
           const fillColor = i % 2 === 0 ? "F5F5F5" : "FFFFFF";
           return [
-            { text: dateStr, options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
-            { text: a.headline || "", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
-            { text: headlineMap[a.id] || "", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", wrap: true } },
-            { text: "Link", options: { fontSize: 16, fill: { color: fillColor }, valign: "middle", align: "center", hyperlink: { url: a.url } } },
+            { text: dateStr, options: { fontSize: 14, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: a.headline || "", options: { fontSize: 14, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: headlineMap[a.id] || "", options: { fontSize: 12, fill: { color: fillColor }, valign: "middle", wrap: true } },
+            { text: "Link", options: { fontSize: 14, fill: { color: fillColor }, valign: "middle", align: "center", hyperlink: { url: a.url } } },
           ];
         }),
       ];
-
       slide.addTable(rows, {
         x: LEFT, y: TOP, w: COL_W.reduce((s, v) => s + v, 0), h: TABLE_H,
         colW: COL_W,
         border: { type: "solid", pt: 0.5, color: "CCCCCC" },
-        rowH: [0.25, ...Array(chunk.length).fill((TABLE_H - 0.25) / chunk.length / 2)],
+        rowH: [0.25, ...Array(articles.length).fill((TABLE_H - 0.25) / articles.length / 2)],
       });
+    };
+
+    // Top Articles slides (ranked by Claude for NTT Docomo relevance)
+    if (topArticles.length > 0) {
+      const topPages = Math.ceil(topArticles.length / ARTICLES_PER_SLIDE);
+      for (let page = 0; page < topPages; page++) {
+        const chunk = topArticles.slice(page * ARTICLES_PER_SLIDE, (page + 1) * ARTICLES_PER_SLIDE);
+        const pageLabel = topPages > 1 ? ` (${page + 1}/${topPages})` : "";
+        buildSlide(`Top Articles — Session #${session.index}${pageLabel}`, "7A3B00", "B8660B", chunk);
+      }
+    }
+
+    // Full long list slides
+    const totalPages = Math.max(1, Math.ceil(sessionArticles.length / ARTICLES_PER_SLIDE));
+    for (let page = 0; page < totalPages; page++) {
+      const chunk = sessionArticles.slice(page * ARTICLES_PER_SLIDE, (page + 1) * ARTICLES_PER_SLIDE);
+      const pageLabel = totalPages > 1 ? ` (${page + 1}/${totalPages})` : "";
+      buildSlide(`Long List — Session #${session.index}${pageLabel}`, "1a1a2e", "1a1a2e", chunk);
     }
 
     const dateStr = session.date.replace(/-/g, "");
