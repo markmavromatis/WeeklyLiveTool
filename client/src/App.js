@@ -651,7 +651,7 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
             title="Download all session articles as a PowerPoint"
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            {exporting ? "TRANSLATING…" : "EXPORT LONG LIST"}
+            {exporting ? "Exporting..." : "EXPORT LONG LIST"}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(session); }}>EDIT</button>
           <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}>REMOVE</button>
