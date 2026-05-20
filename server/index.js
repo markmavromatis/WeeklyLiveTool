@@ -478,7 +478,7 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
           max_tokens: 256,
           messages: [{
             role: "user",
-            content: `You are an analyst for NTT Docomo, Japan's leading telecommunications company. From the following list of technology news headlines, identify the 10 most important and relevant articles for NTT Docomo's strategic interests (telecommunications, 5G/6G, mobile technology, AI, IoT, digital transformation, Japan market, etc.). Return only a comma-separated list of the article numbers (e.g. "1, 3, 5, 7, 9, 12, 15, 18, 20, 23"), with no other text.\n\n${numbered}`,
+            content: `You are an analyst for NTT Docomo, Japan's leading telecommunications company. From the following list of technology news headlines, identify the 10 most important and relevant articles for NTT Docomo's strategic interests (telecommunications, 5G/6G, mobile technology, AI, IoT, digital transformation, Japan market, etc.). Return only a comma-separated list of the article numbers in decreasing order of relevance (most relevant first, e.g. "5, 12, 3, 23, 7, 18, 1, 15, 9, 20"), with no other text.\n\n${numbered}`,
           }],
         });
         const rankText = rankMsg.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
