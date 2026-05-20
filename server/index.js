@@ -441,7 +441,7 @@ app.post("/api/sessions/:id/export-pptx", async (req, res) => {
     const sessionArticles = db.articles
       .filter((a) => a.session_id === sessionId)
       .sort((a, b) => {
-        const dateCmp = (a.article_date || "").localeCompare(b.article_date || "");
+        const dateCmp = (b.article_date || "").localeCompare(a.article_date || "");
         return dateCmp !== 0 ? dateCmp : (a.headline || "").localeCompare(b.headline || "");
       });
 
