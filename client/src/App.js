@@ -705,6 +705,7 @@ function SessionCard({ session, articles, allArticles, onEdit, onDelete, onAssig
 function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, setShowApiKeyModal, showToast }) {
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState(null);
+  const [showSearch, setShowSearch] = useState(false);
   const [modalArticle, setModalArticle] = useState(undefined);
   const [loadingId, setLoadingId] = useState(null);
   const [sessionPrompt, setSessionPrompt] = useState(null); // { articleId, fridayDate }
@@ -716,7 +717,10 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
   const allTags = [...new Set(articles.flatMap((a) => a.tags || []))].sort();
 
   useEffect(() => {
-    const h = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setModalArticle(null); } };
+    const h = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setModalArticle(null); }
+      if (e.key === "Escape") setShowSearch(false);
+    };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
@@ -865,10 +869,14 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
     <>
       <div className="toolbar">
         <div className="toolbar-left">
-          <div className="search-wrap">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search articles…" />
-          </div>
+          <button
+            className={`btn btn-ghost search-toggle-btn ${showSearch ? "search-toggle-open" : ""}`}
+            onClick={() => setShowSearch(v => !v)}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            SEARCH
+            {(search || tagFilter) && <span className="search-active-badge">{[search, tagFilter].filter(Boolean).length}</span>}
+          </button>
           <span className="count-badge">{filtered.length} article{filtered.length !== 1 ? "s" : ""}</span>
         </div>
         <div className="toolbar-right-actions">
@@ -879,13 +887,27 @@ function ArticlesScreen({ articles, sessions, setSessions, setArticles, apiKey, 
           </button>
         </div>
       </div>
-      {allTags.length > 0 && (
-        <div className="tag-filter-bar">
-          <span className="tag-filter-label">FILTER</span>
-          <button className={`tag-filter-btn ${!tagFilter ? "active" : ""}`} onClick={() => setTagFilter(null)}>All</button>
-          {allTags.map((t) => (
-            <button key={t} className={`tag-filter-btn ${tagFilter === t ? "active" : ""}`} onClick={() => setTagFilter(tagFilter === t ? null : t)}>{t}</button>
-          ))}
+      {showSearch && (
+        <div className="search-panel">
+          <div className="search-panel-row">
+            <div className="search-wrap">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search articles…" autoFocus />
+            </div>
+            {(search || tagFilter) && (
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(""); setTagFilter(null); }}>CLEAR</button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowSearch(false)}>CLOSE</button>
+          </div>
+          {allTags.length > 0 && (
+            <div className="search-panel-filters">
+              <span className="tag-filter-label">FILTER</span>
+              <button className={`tag-filter-btn ${!tagFilter ? "active" : ""}`} onClick={() => setTagFilter(null)}>All</button>
+              {allTags.map((t) => (
+                <button key={t} className={`tag-filter-btn ${tagFilter === t ? "active" : ""}`} onClick={() => setTagFilter(tagFilter === t ? null : t)}>{t}</button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
